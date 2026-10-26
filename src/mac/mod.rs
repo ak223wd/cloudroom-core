@@ -814,6 +814,11 @@ other commands run read-only, and --write needs their approval.";
             let mut rest = rest.iter();
             while let Some(word) = rest.next() {
                 match word.as_str() {
+                    // After the command words, `--help` belongs to the command: `mac run ls --help`.
+                    "--help" | "-h" if words.is_empty() => {
+                        println!("{usage}");
+                        return Ok(0);
+                    }
                     "--cwd" if words.is_empty() => cwd = rest.next().cloned(),
                     "--stdin" if words.is_empty() => stdin = true,
                     "--write" if words.is_empty() => write = true,
@@ -832,6 +837,10 @@ other commands run read-only, and --write needs their approval.";
             let value = request(&socket, "POST", "/jobs", Some(body)).await?;
             print_result(value).await
         }
+        (_, rest) if rest.iter().any(|w| matches!(w.as_str(), "--help" | "-h")) => {
+            println!("{usage}");
+            Ok(0)
+        }
         ("result", [job]) if job.bytes().all(|b| b.is_ascii_digit() || b == b'-') => {
             print_result(request(&socket, "GET", &format!("/jobs/{job}"), None).await?).await
         }
@@ -847,7 +856,7 @@ other commands run read-only, and --write needs their approval.";
         }
         _ => {
             println!("{usage}");
-            Ok(if name.is_empty() || name == "--help" {
+            Ok(if matches!(name.as_str(), "" | "--help" | "-h") {
                 0
             } else {
                 2
@@ -863,4 +872,34 @@ async fn print_result(value: Value) -> io::Result<i32> {
     std::io::stdout().flush()?;
     std::io::stderr().write_all(&stderr)?;
     Ok(code.unwrap_or(1))
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn subcommand_help_prints_usage_but_run_passes_it_after_the_command() {
+        let cli = |words: &str| {
+            let args = format!("--socket /nonexistent/mac.sock {words}");
+            async move { super::cli(&args.split(' ').map(String::from).collect::<Vec<_>>()).await }
+        };
+        for words in [
+            "-h",
+            "run --help",
+            "run --write -h",
+            "pull --help",
+            "push -h",
+            "push x --help",
+            "status --help",
+            "result -h",
+        ] {
+            assert_eq!(cli(words).await.unwrap(), 0, "{words}");
+        }
+        // The missing socket proves it went to the Mac.
+        let error = cli("run ls --help").await.unwrap_err().to_string();
+        assert!(error.contains("not installed"), "{error}");
+        let error = cli("push /nonexistent/x").await.unwrap_err().to_string();
+        assert!(error.starts_with("VM path /nonexistent/x: "), "{error}");
+        let error = cli("push Cargo.toml/").await.unwrap_err().to_string();
+        assert!(error.contains("not installed"), "{error}");
+    }
 }

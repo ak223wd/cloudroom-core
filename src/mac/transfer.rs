@@ -102,6 +102,10 @@ pub(super) async fn push(socket: &str, source: &str, target: &str) -> io::Result
     let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
         return Err(io::Error::other("push needs a file or folder path"));
     };
+    // tar reads `parent/name`, so `file.txt/` still works.
+    if let Err(error) = parent.join(name).symlink_metadata() {
+        return Err(io::Error::other(format!("VM path {source}: {error}")));
+    }
     let parent = if parent.as_os_str().is_empty() {
         Path::new(".")
     } else {
@@ -118,9 +122,12 @@ pub(super) async fn push(socket: &str, source: &str, target: &str) -> io::Result
         .status()
         .await?;
     let size = fs::metadata(&archive.0).map_or(u64::MAX, |m| m.len());
-    if !packed.success() || size > MAX {
+    if !packed.success() {
+        return Err(io::Error::other("Could not pack the files"));
+    }
+    if size > MAX {
         return Err(io::Error::other(
-            "Could not pack the files; the compressed limit is 2 GiB",
+            "The packed files are over the 2 GiB limit",
         ));
     }
     let unpack = format!("d={}; mkdir -p -- \"$d\" && ", quote(target));
