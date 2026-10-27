@@ -406,7 +406,7 @@ impl Workspaces {
         let limit = if kind == "image" {
             10 * 1024 * 1024
         } else {
-            25 * 1024 * 1024
+            100 * 1024 * 1024
         };
         let mut bytes = Vec::new();
         let mut stream = body.into_data_stream();

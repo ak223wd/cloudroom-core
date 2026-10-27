@@ -736,7 +736,12 @@ fn quote(path: &str) -> String {
     if rest.is_empty() {
         return prefix.to_owned();
     }
-    format!("{prefix}'{}'", rest.replace('\'', "'\\''"))
+    format!("{prefix}{}", literal(rest))
+}
+
+/// Quotes `text` for the shell exactly as written, `~` included.
+fn literal(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 pub(crate) async fn request(
@@ -800,13 +805,15 @@ pub async fn cli(args: &[String]) -> io::Result<i32> {
         args.remove(0);
     }
     let usage = "room-cli mac run [--cwd DIR] [--stdin] [--write] COMMAND
-room-cli mac pull MAC_PATH [VM_FOLDER]
-room-cli mac push VM_PATH [MAC_FOLDER]
+room-cli mac pull MAC_PATH [VM_PATH]
+room-cli mac push VM_PATH [MAC_PATH]
 room-cli mac result JOB
 room-cli mac status
 Runs on the user's paired Mac as the user, in their home folder by default.
 Add --write when a command changes the Mac. Unless the user gives Full access,
-other commands run read-only, and --write needs their approval.";
+other commands run read-only, and --write needs their approval.
+pull and push work like cp: into an existing folder or a path ending in /,
+else under that new name, which must not exist yet.";
     let name = args.first().cloned().unwrap_or_default();
     match (name.as_str(), &args[1.min(args.len())..]) {
         ("run", rest) => {

@@ -123,8 +123,8 @@ class WorkspaceTests(unittest.TestCase):
             saved = part(2*size)['receipt']['input']
             self.assertEqual(Path(saved['path']).read_bytes(),big)
             self.assertEqual(part(2*size)['receipt']['input'],saved)
-            self.assertEqual(upload(kind,'parts-large','big.bin',b'x',expected=409,parts=f'&offset=0&total={25*1024**2+1}')['code'],'attachment_too_large')
-            for media,limit in [('image',10*1024**2),('file',25*1024**2)]:
+            self.assertEqual(upload(kind,'parts-large','big.bin',b'x',expected=409,parts=f'&offset=0&total={100*1024**2+1}')['code'],'attachment_too_large')
+            for media,limit in [('image',10*1024**2),('file',100*1024**2)]:
                 too_large = upload(kind,'large-'+media,'large',b'x'*(limit+1),media,409)
                 self.assertEqual(too_large['code'],'attachment_too_large')
                 self.assertFalse((path/'.cloudroom/attachments'/('large-'+media)/'large').exists())

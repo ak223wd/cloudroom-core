@@ -105,7 +105,7 @@ const rejectionMessages: Record<string, string> = {
   invalid_service_tier: "This service tier is unavailable for the cloud model.",
   invalid_attachment: "The attachment could not be stored on Cloud.",
   attachment_permission_denied: "Cloud folder permission denied",
-  attachment_too_large: "The attachment exceeds the Cloud size limit (10 MiB per image, 25 MiB per file).",
+  attachment_too_large: "The attachment exceeds the Cloud size limit (10 MiB per image, 100 MiB per file).",
 };
 // Thread errors with these messages ask the user to connect an account, not retry blindly.
 export const authRequiredMessages = new Set([rejectionMessages.codex_auth_required, rejectionMessages.cursor_auth_required, rejectionMessages.claude_auth_required]);
@@ -698,7 +698,7 @@ export class CloudroomClient {
     signal?: AbortSignal,
   ): Promise<Acceptance> {
     requestId(id);
-    if (!Number.isSafeInteger(upload.length) || upload.length <= 0 || upload.length > 25 * 1024 * 1024) {
+    if (!Number.isSafeInteger(upload.length) || upload.length <= 0 || upload.length > 100 * 1024 * 1024) {
       throw new CloudroomError("Attachment exceeds the size limit", 400);
     }
     const query = new URLSearchParams({ request_id: id, name, kind });
@@ -722,7 +722,7 @@ export class CloudroomClient {
     signal?: AbortSignal,
   ): Promise<Acceptance> {
     requestId(id);
-    if (bytes.length > 25 * 1024 * 1024) throw new CloudroomError("Attachment exceeds the size limit", 400);
+    if (bytes.length > 100 * 1024 * 1024) throw new CloudroomError("Attachment exceeds the size limit", 400);
     let offset = 0;
     do {
       const part = bytes.subarray(offset, offset + UPLOAD_PART);

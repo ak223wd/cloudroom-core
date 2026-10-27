@@ -640,10 +640,22 @@ end run'''
 
 
 def visible(text, chars, lines):
-    """The part of `text` the Ask first popup shows, and how many characters it leaves out."""
-    text = text.rstrip()
-    shown = ''.join(text[:chars].splitlines(keepends=True)[:lines]).rstrip()
-    return shown, len(text) - len(shown)
+    """The part of an agent's text the Ask first popup shows, and how many characters it leaves out. Characters the
+    popup could hide or show as something else, like \\r or a right-to-left mark, show as escapes such as \\u202e.
+    Only \\n breaks lines, and with `lines` at 1 it is escaped too."""
+    shown, keep = [], '\n' if lines > 1 else ''
+    for c in text:
+        c = c if c.isprintable() or c in keep else c.encode('unicode_escape').decode()
+        lines, chars = lines - (c == '\n'), chars - len(c)
+        if chars < 0 or not lines:
+            break
+        shown.append(c)
+    return ''.join(shown), len(text) - len(shown)
+
+
+def block(text):
+    """Agent text under its label in the Ask first popup: its lines are indented, and the popup's own lines are not."""
+    return '    ' + text.replace('\n', '\n    ')
 
 
 # Hex characters per result request: some sandbox proxies drop requests over about 8 MB,
@@ -758,18 +770,20 @@ class MacJobs:
             if core.key in self.trusted:
                 return True
             # Show what will run, including a script sent as input. Hidden parts still run: warn above them, where
-            # padding cannot push the warning out of view. Return always denies.
-            command, hidden = visible(job['command'], 600, 10)
+            # padding cannot push the warning out of view. The command comes first, and the folder after it on one
+            # line, so a folder name cannot pose as the command. Return always denies.
+            command, hidden = visible(job['command'].rstrip(), 600, 10)
             warnings = f"Warning: {hidden:,} more characters of this command are not shown, and will also run.\n\n" if hidden else ''
-            text = f"Folder: {job.get('cwd') or '~'}\nCommand: {command}"
+            folder, cut = visible(job.get('cwd') or '~', 200, 1)
+            text = f"Command:\n{block(command)}\n\nFolder: {folder}{'…' if cut else ''}"
             if job.get('stdin'):
                 try:
-                    data = bytes.fromhex(job['stdin']).decode()
+                    data = bytes.fromhex(job['stdin']).decode().rstrip()
                     if '\0' in data:
                         raise ValueError('binary input')
                     script, hidden = visible(data, 1000, 20)
-                    count = len(data.rstrip().splitlines())
-                    text += f"\n\nInput ({count:,} line{'s' if count != 1 else ''}{', all shown' if not hidden else ''}):\n\n{script}"
+                    count = data.count('\n') + 1
+                    text += f"\n\nInput ({count:,} line{'s' if count != 1 else ''}{', all shown' if not hidden else ''}):\n{block(script)}"
                     if hidden:
                         warnings += f"Warning: {hidden:,} more characters of its input are not shown, and will also run.\n\n"
                 except ValueError:  # Not text, such as the archive a push unpacks.

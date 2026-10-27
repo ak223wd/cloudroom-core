@@ -560,7 +560,7 @@ impl IntoResponse for session::Error {
             "cloud execution already owns this transfer; use Stop" => "teleport_running",
             "Cloud folder permission denied" => "attachment_permission_denied",
             "attachment upload failed" => "invalid_attachment",
-            "image exceeds the 10 MiB limit" | "file exceeds the 25 MiB limit" => {
+            "image exceeds the 10 MiB limit" | "file exceeds the 100 MiB limit" => {
                 "attachment_too_large"
             }
             "request_id already has different content"
@@ -1285,13 +1285,13 @@ async fn attach(
             let limit = if query.kind == "image" {
                 10 << 20
             } else {
-                25 << 20
+                100 << 20
             };
             if total > limit {
                 return Err(session::Error::Conflict(if query.kind == "image" {
                     "image exceeds the 10 MiB limit"
                 } else {
-                    "file exceeds the 25 MiB limit"
+                    "file exceeds the 100 MiB limit"
                 }));
             }
             match attach_part(&key, offset, total, &part).map_err(session::Error::Conflict)? {
@@ -1331,7 +1331,7 @@ async fn attach(
                 std::io::ErrorKind::FileTooLarge if query.kind == "image" => {
                     "image exceeds the 10 MiB limit"
                 }
-                std::io::ErrorKind::FileTooLarge => "file exceeds the 25 MiB limit",
+                std::io::ErrorKind::FileTooLarge => "file exceeds the 100 MiB limit",
                 _ => "attachment upload failed",
             })
         })?;

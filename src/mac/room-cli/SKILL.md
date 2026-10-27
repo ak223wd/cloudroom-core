@@ -13,10 +13,11 @@ description: 'Inspect and control the user’s Cloudroom threads, projects, and 
 - `room-cli` here covers this thread, its children, and loops. Everything else (other threads, projects, settings, plugins) lives in the Cloudroom app on the user’s Mac, whose `room-cli` has every command. Run it there through Mac access (see the `cloud-mac` skill):
 
   ```sh
-  room-cli mac run 'ELECTRON_RUN_AS_NODE=1 /Applications/Cloudroom.app/Contents/MacOS/Cloudroom /Applications/Cloudroom.app/Contents/Resources/app.asar.unpacked/node_modules/bb-app/host-daemon/dist/room-cli thread list --json'
+  room-cli mac run '~/.local/bin/room-cli thread list --json'
   ```
 
+- `~/.local/bin/room-cli` is Cloudroom's only if `readlink` shows it points into a Cloudroom app, or its line 2 starts with `# Managed by Cloudroom`. If it is missing (older apps), fails, or is anything else, use the bundled CLI. On macOS, that is `ELECTRON_RUN_AS_NODE=1 /Applications/Cloudroom.app/Contents/MacOS/Cloudroom /Applications/Cloudroom.app/Contents/Resources/app.asar.unpacked/node_modules/bb-app/host-daemon/dist/room-cli`. On Linux, while the app runs, it is any match of `/tmp/.mount_*/resources/app.asar.unpacked/node_modules/bb-app/host-daemon/dist/room-cli`.
 - On the Mac, start with `room-cli --help` or `room-cli guide`. Prefer `--json`.
-- Tools, API keys, and repos for every cloud sandbox live in the Mac's `room-cli cloud env list --json`. To install a tool in every sandbox, read https://www.cloudroom.dev/docs/cloud-environment.md first (tools must land on the agents' PATH). Then save the whole new script with `room-cli mac run --write --stdin '... room-cli cloud setup set' < FILE`. It replaces the old script, so keep its lines.
+- Tools, API keys, and repos for every cloud sandbox live in the Mac's `room-cli cloud env list --json`. To install a tool in every sandbox, read https://www.cloudroom.dev/docs/cloud-environment.md first (tools must land on the agents' PATH). Then save the whole new script with `room-cli mac run --write --stdin '~/.local/bin/room-cli cloud setup set' < FILE`. It replaces the old script, so keep its lines.
 - `Mac unavailable` means the Mac is offline or Mac access is off, and says which when Cloudroom knows, including why an online Mac can't connect. `room-cli mac status` gives the same `reason`. Tell the user.
 - Never inspect, message, or launch other threads unless the user asks.

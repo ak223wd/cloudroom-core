@@ -11,6 +11,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('preview', Path(__file__).parents[1] / 'src/preview/client.py')
 preview = importlib.util.module_from_spec(spec)
@@ -125,6 +126,27 @@ class MacJobTests(unittest.TestCase):
             preview.MacJobs(folder).execute(core, 'mac', {'id': 'job', 'command': f'touch {folder}/ran', 'write': True})
             self.assertFalse((folder / 'ran').exists())
             self.assertEqual(posted, ['running'])
+
+    def test_ask_first_popup_shows_agent_text_as_text(self):
+        # Security sweep: line breaks in a folder name could push the command out of view in the Ask first popup.
+        shown = []
+        class Popup:
+            def __init__(self, args, **_):
+                shown.append(args[3])
+            def communicate(self):
+                return 'Allow\n', None
+        job = {'id': 'job', 'command': 'bash -s\necho two\N{RIGHT-TO-LEFT OVERRIDE}', 'cwd': '/tmp/a\nb' + 'c' * 300,
+               'write': True, 'stdin': ''.join(f'echo {n}\r\n' for n in range(25)).encode().hex()}
+        with mock.patch.object(preview.subprocess, 'Popen', Popup):
+            self.assertTrue(preview.MacJobs(Path('/unused')).approve(SimpleNamespace(key='core'), job))
+        lines = shown[0].split('\n')
+        self.assertEqual(lines[2:12], ['Warning: 44 more characters of its input are not shown, and will also run.', '',
+                                       'Command:', '    bash -s', '    echo two\\u202e', '',
+                                       'Folder: /tmp/a\\nb' + 'c' * 191 + '…', '', 'Input (25 lines):', '    echo 0\\r'])
+        self.assertEqual(lines[12:], [f'    echo {n}\\r' for n in range(1, 20)])
+        self.assertTrue(all(c.isprintable() or c == '\n' for c in shown[0]))
+        # Escapes count against the limit, and the hidden count stays in the agent's own characters.
+        self.assertEqual(preview.visible('\0' * 300, 600, 10), ('\\x00' * 150, 150))
 
 
 if __name__ == '__main__':
