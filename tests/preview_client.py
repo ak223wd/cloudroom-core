@@ -4,8 +4,13 @@ import contextlib
 from http.server import BaseHTTPRequestHandler
 import http.client
 import importlib.util
+import json
 from pathlib import Path
+import os
+import socket
 import socketserver
+import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -51,10 +56,12 @@ class App(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(data)
 
 
-class UnixServer(socketserver.ThreadingUnixStreamServer):
-    daemon_threads = True
+if hasattr(socketserver, 'ThreadingUnixStreamServer'):  # Windows' Python has no Unix sockets.
+    class UnixServer(socketserver.ThreadingUnixStreamServer):
+        daemon_threads = True
 
 
+@unittest.skipIf(sys.platform == 'win32', 'Unix sockets')
 class PreviewTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='cr-preview-', dir='/tmp')
@@ -110,6 +117,76 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(self.request()[2], b'ok')
             self.assertLess(time.monotonic() - started, 2)
             self.assertEqual(slow.result()[0], 405)
+
+
+class Json(BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_POST(self):
+        body = json.dumps({'echo': json.loads(self.rfile.read(int(self.headers['Content-Length'])))}).encode()
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
+
+class ControlTests(unittest.TestCase):
+    def test_control_requests_reach_the_website_and_core(self):
+        # Every website and core call goes through control(); nothing else in the helper may take its name.
+        server = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Json)
+        threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}, daemon=True).start()
+        self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
+        url = f'http://127.0.0.1:{server.server_address[1]}/api/desktop/sandboxes'
+        self.assertEqual(preview.control(url, {'action': 'awake'}, 'POST', {}), {'echo': {'action': 'awake'}})
+
+
+class UpstreamTimeoutTests(unittest.TestCase):
+    @unittest.skipIf(sys.platform == 'win32', 'Unix sockets')
+    def test_connect_to_a_full_socket_times_out(self):
+        # The timeout must apply to connect() itself, or a stuck tunnel blocks a browser request forever.
+        with tempfile.TemporaryDirectory(prefix='cr-preview-', dir='/tmp') as folder:
+            path = Path(folder) / 'full.sock'
+            listener = socket.socket(socket.AF_UNIX)
+            listener.bind(str(path)); listener.listen(0)
+            waiting = []
+            try:
+                while True:
+                    client = socket.socket(socket.AF_UNIX); client.setblocking(False); waiting.append(client)
+                    client.connect(str(path))
+            except BlockingIOError:
+                pass
+            upstream = preview.Upstream(path)
+            upstream.timeout = .3
+            failures = []
+            def connect():
+                try:
+                    upstream.connect()
+                except OSError as error:
+                    failures.append(error)
+            attempt = threading.Thread(target=connect, daemon=True)
+            attempt.start(); attempt.join(3)
+            self.assertFalse(attempt.is_alive(), 'connect() ignored the timeout')
+            self.assertEqual(len(failures), 1)
+            for client in [*waiting, listener]:
+                client.close()
+
+
+@unittest.skipUnless(sys.platform == 'win32', 'Windows helper lifecycle')
+class WindowsLifecycleTests(unittest.TestCase):
+    def test_start_confirms_and_stop_asks_the_helper_to_exit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            shutil.copyfile(spec.origin, folder / 'client.py')
+            (folder / 'pid').write_text(str(os.getpid()))  # An old helper's pid file must never be used to stop anything.
+            preview.windows(folder, False)
+            self.assertTrue(preview.running(folder))
+            self.assertTrue((folder / 'started').read_text())
+            with self.assertRaises(OSError):  # A second start can't take the lock; it ends, and the running helper stays.
+                preview.windows(folder, False)
+            self.assertTrue(preview.running(folder))
+            preview.windows(folder, True)
+            self.assertFalse(preview.running(folder))
+            preview.windows(folder, True)  # Stopping a stopped helper is a no-op.
 
 
 class MacJobTests(unittest.TestCase):
